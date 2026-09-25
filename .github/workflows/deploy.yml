@@ -70,37 +70,44 @@ jobs:
             REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
+            mkdir -p "$APP_DIR"
+
             if [ -d "$APP_DIR/.git" ]; then
               echo "Repository exists. Pulling latest changes..."
-              cd $APP_DIR
-              git fetch origin $BRANCH
-              git reset --hard origin/$BRANCH
+              cd "$APP_DIR"
+              git fetch origin "$BRANCH"
+              git reset --hard "origin/$BRANCH"
               git clean -fd
             else
-              echo "Cloning repository for the first time..."
+              echo "Setting up repository for the first time..."
+
               if [ -f "$APP_DIR/.env" ]; then
-                cp $APP_DIR/.env /tmp/backend-env-backup
+                cp "$APP_DIR/.env" /tmp/backend-env-backup
               fi
               if [ -f "$APP_DIR/ecosystem.config.js" ]; then
-                cp $APP_DIR/ecosystem.config.js /tmp/backend-ecosystem-backup
+                cp "$APP_DIR/ecosystem.config.js" /tmp/backend-ecosystem-backup
               fi
 
-              rm -rf $APP_DIR/*
-              git clone --branch $BRANCH --single-branch $REPO_URL $APP_DIR
-              cd $APP_DIR
+              # Clear ALL contents of APP_DIR, including dotfiles (e.g. .env),
+              # which a bare "$APP_DIR/*" glob would silently skip, leaving the
+              # directory non-empty and causing "git clone" to fail.
+              find "$APP_DIR" -mindepth 1 -delete
+
+              git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
+              cd "$APP_DIR"
 
               if [ -f "/tmp/backend-env-backup" ]; then
-                cp /tmp/backend-env-backup $APP_DIR/.env
+                cp /tmp/backend-env-backup "$APP_DIR/.env"
                 rm /tmp/backend-env-backup
               fi
               if [ -f "/tmp/backend-ecosystem-backup" ]; then
-                cp /tmp/backend-ecosystem-backup $APP_DIR/ecosystem.config.js
+                cp /tmp/backend-ecosystem-backup "$APP_DIR/ecosystem.config.js"
                 rm /tmp/backend-ecosystem-backup
               fi
             fi
 
             echo "Installing dependencies..."
-            cd $APP_DIR
+            cd "$APP_DIR"
             npm ci --production
 
             echo "Restarting application with PM2..."
