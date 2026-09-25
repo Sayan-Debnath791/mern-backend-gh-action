@@ -13,16 +13,8 @@ const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000', 'http
 app.use(helmet());
 app.use(morgan('combined'));
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-      return;
-    }
-
-    callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true,
+  origin: [process.env.FRONTEND_URL, "http://localhost:3000"],
+  credentials: true
 }));
 app.use(express.json());
 
