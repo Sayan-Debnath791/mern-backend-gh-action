@@ -67,7 +67,7 @@ jobs:
             echo "========================================="
 
             APP_DIR="/var/www/backend"
-            REPO_URL="<https://github.com/$>{{ github.repository }}.git"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
             BRANCH="main"
 
             if [ -d "$APP_DIR/.git" ]; then
@@ -116,7 +116,7 @@ jobs:
             sleep 5
 
             echo "Health check..."
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" <http://localhost:5000/api/health> || echo "000")
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health || echo "000")
 
             if [ "$HTTP_STATUS" = "200" ]; then
               echo "SUCCESS: Health check passed (HTTP $HTTP_STATUS)"
