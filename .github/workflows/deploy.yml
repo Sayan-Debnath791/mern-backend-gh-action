@@ -1,0 +1,132 @@
+name: Deploy Backend to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    name: Deploy MERN STACK Backend in AWS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for syntax errors
+        run: node --check src/server.js
+
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          script: |
+            set -e
+
+            echo "========================================="
+            echo "DEPLOYMENT STARTED"
+            echo "Time: $(date)"
+            echo "========================================="
+
+            APP_DIR="/var/www/backend"
+            REPO_URL="<https://github.com/$>{{ github.repository }}.git"
+            BRANCH="main"
+
+            if [ -d "$APP_DIR/.git" ]; then
+              echo "Repository exists. Pulling latest changes..."
+              cd $APP_DIR
+              git fetch origin $BRANCH
+              git reset --hard origin/$BRANCH
+              git clean -fd
+            else
+              echo "Cloning repository for the first time..."
+              if [ -f "$APP_DIR/.env" ]; then
+                cp $APP_DIR/.env /tmp/backend-env-backup
+              fi
+              if [ -f "$APP_DIR/ecosystem.config.js" ]; then
+                cp $APP_DIR/ecosystem.config.js /tmp/backend-ecosystem-backup
+              fi
+
+              rm -rf $APP_DIR/*
+              git clone --branch $BRANCH --single-branch $REPO_URL $APP_DIR
+              cd $APP_DIR
+
+              if [ -f "/tmp/backend-env-backup" ]; then
+                cp /tmp/backend-env-backup $APP_DIR/.env
+                rm /tmp/backend-env-backup
+              fi
+              if [ -f "/tmp/backend-ecosystem-backup" ]; then
+                cp /tmp/backend-ecosystem-backup $APP_DIR/ecosystem.config.js
+                rm /tmp/backend-ecosystem-backup
+              fi
+            fi
+
+            echo "Installing dependencies..."
+            cd $APP_DIR
+            npm ci --production
+
+            echo "Restarting application with PM2..."
+            if pm2 describe backend-api > /dev/null 2>&1; then
+              pm2 reload ecosystem.config.js --env production
+            else
+              pm2 start ecosystem.config.js --env production
+            fi
+
+            pm2 save
+
+            echo "Waiting for application to start..."
+            sleep 5
+
+            echo "Health check..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" <http://localhost:5000/api/health> || echo "000")
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "SUCCESS: Health check passed (HTTP $HTTP_STATUS)"
+            else
+              echo "WARNING: Health check returned HTTP $HTTP_STATUS"
+              echo "Checking PM2 logs for errors..."
+              pm2 logs backend-api --lines 20 --nostream
+            fi
+
+            echo "========================================="
+            echo "DEPLOYMENT FINISHED"
+            echo "Time: $(date)"
+            echo "========================================="
